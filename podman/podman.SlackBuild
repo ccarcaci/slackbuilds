@@ -1,0 +1,131 @@
+#!/bin/bash
+
+# Slackware build script for podman
+
+# Copyright 2026 Claudio Carcaci <ccarcaci@libero.it>
+# All rights reserved.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+cd $(dirname $0) ; CWD=$(pwd)
+
+PRGNAM=podman
+VERSION=${VERSION:-6.1.2}
+GIT_COMMIT="04f3aa430e6df81bea059978bc5bafbc846ba3e7"
+BUILD=${BUILD:-1}
+TAG=${TAG:-_SBo}
+PKGTYPE=${PKGTYPE:-tgz}
+
+if [ -z "$ARCH" ]; then
+  case "$( uname -m )" in
+    i?86) ARCH=i586 ;;
+    arm*) ARCH=arm ;;
+       *) ARCH=$( uname -m ) ;;
+  esac
+fi
+
+# If the variable PRINT_PACKAGE_NAME is set, then this script will report what
+# the name of the created package would be, and then exit. This information
+# could be useful to other scripts.
+if [ ! -z "${PRINT_PACKAGE_NAME}" ]; then
+  echo "$PRGNAM-$VERSION-$ARCH-$BUILD$TAG.$PKGTYPE"
+  exit 0
+fi
+
+TMP=${TMP:-/tmp/SBo}
+PKG=$TMP/package-$PRGNAM
+OUTPUT=${OUTPUT:-/tmp}
+
+if [ "$ARCH" != "x86_64" ]; then
+  echo "$ARCH is not supported: google-go-lang, crun, netavark and the rest of this build's REQUIRES chain are only packaged on SBo for x86_64."
+  exit 1
+fi
+
+# Locate the Go >= 1.26 toolchain installed by the google-go-lang SlackBuild.
+# It is not on PATH by default (its /etc/profile.d snippet is only read by
+# login shells, not by this script) and must take priority over Slackware's
+# stock /usr/bin/go, which is version 1.16 and far too old to build podman 6.
+GO_BIN=$(ls -1 /usr/lib64/go*/go/bin/go /usr/lib/go*/go/bin/go 2>/dev/null | sort -V | tail -n 1)
+if [ -z "$GO_BIN" ]; then
+  echo "Could not find a Go toolchain installed by google-go-lang (looked under /usr/lib64/go*/go/bin/go)."
+  exit 1
+fi
+export GOROOT=$(dirname $(dirname "$GO_BIN"))
+export PATH="$GOROOT/bin:$PATH"
+GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+GO_MAJOR=$(echo "$GO_VERSION" | cut -d. -f1)
+GO_MINOR=$(echo "$GO_VERSION" | cut -d. -f2)
+if [ "$GO_MAJOR" -lt 1 ] || { [ "$GO_MAJOR" -eq 1 ] && [ "$GO_MINOR" -lt 26 ]; }; then
+  echo "podman $VERSION needs Go >= 1.26, found $GO_VERSION at $GO_BIN (install/upgrade google-go-lang)."
+  exit 1
+fi
+
+set -e
+
+rm -rf $PKG
+mkdir -p $TMP $PKG $OUTPUT
+cd $TMP
+rm -rf $PRGNAM-$VERSION
+tar xvf $CWD/$PRGNAM-$VERSION.tar.gz
+cd $PRGNAM-$VERSION
+chown -R root:root .
+find -L . \
+ \( -perm 777 -o -perm 775 -o -perm 750 -o -perm 711 -o -perm 555 \
+  -o -perm 511 \) -exec chmod 755 {} \; -o \
+ \( -perm 666 -o -perm 664 -o -perm 640 -o -perm 600 -o -perm 444 \
+  -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
+
+# podman 6 is a Go-modules project with a vendor/ directory committed to the
+# release tarball: no GOPATH src/<domain>/<org> layout is needed anymore
+# (unlike the 4.7.2 build this replaces), it builds straight from here.
+export GO111MODULE=on
+export GOFLAGS=-mod=vendor
+
+# BUILDTAGS is left to the Makefile's own defaults: it self-detects systemd,
+# libsubid, btrfs, sqlite and apparmor support via hack/*_tag.sh, which
+# correctly no-op on Slackware (no systemd, shadow 4.8.1 predates libsubid).
+make GIT_COMMIT="$GIT_COMMIT"
+make install \
+  DESTDIR="$PKG" \
+  PREFIX="/usr" \
+  MANDIR="/usr/man" \
+  GIT_COMMIT="$GIT_COMMIT"
+
+find $PKG -print0 | xargs -0 file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null || true
+
+find $PKG/usr/man -type f -exec gzip -9 {} \;
+for i in $( find $PKG/usr/man -type l ) ; do ln -s $( readlink $i ).gz $i.gz ; rm $i ; done
+
+mkdir -p $PKG/usr/doc/$PRGNAM-$VERSION
+cp -a \
+  LICENSE README.md RELEASE_NOTES.md \
+  $PKG/usr/doc/$PRGNAM-$VERSION
+cat $CWD/$PRGNAM.SlackBuild > $PKG/usr/doc/$PRGNAM-$VERSION/$PRGNAM.SlackBuild
+
+mkdir -p $PKG/etc/containers/secrets
+cp $CWD/registries.conf $PKG/etc/containers/registries.conf.new
+cp $CWD/mounts.conf $PKG/etc/containers/mounts.conf.new
+cp $CWD/policy.json $PKG/etc/containers/policy.json.new
+
+mkdir -p $PKG/install
+cat $CWD/slack-desc > $PKG/install/slack-desc
+cat $CWD/doinst.sh > $PKG/install/doinst.sh
+
+cd $PKG
+/sbin/makepkg -l y -c n $OUTPUT/$PRGNAM-$VERSION-$ARCH-$BUILD$TAG.$PKGTYPE
