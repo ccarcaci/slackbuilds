@@ -15,7 +15,7 @@ PACKAGES := $(notdir $(PACKAGES))
 # x86_64-only, hence the pinned platform (emulated on arm64 hosts).
 SLACKWARE_IMAGE ?= aclemons/slackware:15.0
 SBO_TOOLS_IMAGE ?= aclemons/sbo-maintainer-tools:latest
-DOCKER_RUN := docker run --rm --platform linux/amd64 -v "$(MAKEFILE_DIR):/mnt" -w /mnt
+DOCKER_RUN := docker run --rm --platform linux/amd64 --volume "$(MAKEFILE_DIR):/mnt" --workdir /mnt
 
 # The slackware image ships without ca-certificates, so wget cannot verify https:
 # lend it the host's CA bundle (macOS, Debian, Fedora paths). Override if elsewhere.
@@ -45,7 +45,7 @@ _check_pkg:
 .PHONY: download
 download: _check_pkg ## download the files listed in <PKG>.info and check their MD5SUM. PKG=<name>
 	@[ -n "$(CA_BUNDLE)" ] || { echo "error: no host CA bundle found, set CA_BUNDLE=<path to PEM bundle>"; exit 1; }
-	@$(DOCKER_RUN) -v "$(CA_BUNDLE):/etc/ssl/cert.pem:ro" $(SLACKWARE_IMAGE) bash -c ' \
+	@$(DOCKER_RUN) --volume "$(CA_BUNDLE):/etc/ssl/cert.pem:ro" $(SLACKWARE_IMAGE) bash -c ' \
 		cd $(PKG) && . ./$(PKG).info && \
 		for field in "$$DOWNLOAD|$$MD5SUM" "$$DOWNLOAD_x86_64|$$MD5SUM_x86_64"; do \
 			urls=$${field%%|*}; sums=$${field##*|}; \
@@ -53,9 +53,9 @@ download: _check_pkg ## download the files listed in <PKG>.info and check their 
 			set -- $$sums; \
 			for url in $$urls; do \
 				file=$${url##*/}; want=$$1; shift; \
-				[ -f "$$file" ] || { wget -q -O "$$file.part" "$$url" && mv "$$file.part" "$$file"; } \
-					|| { rm -f "$$file.part"; echo "error: could not download $$url"; exit 1; }; \
-				have=$$(md5sum "$$file" | cut -d" " -f1); \
+				[ -f "$$file" ] || { wget --quiet --output-document="$$file.part" "$$url" && mv "$$file.part" "$$file"; } \
+					|| { rm --force "$$file.part"; echo "error: could not download $$url"; exit 1; }; \
+				have=$$(md5sum "$$file" | cut --delimiter=" " --fields=1); \
 				[ "$$have" = "$$want" ] \
 					|| { echo "error: MD5SUM mismatch for $(PKG)/$$file (expected $$want, got $$have)"; exit 1; }; \
 				echo "$$file: MD5SUM ok"; \
@@ -74,14 +74,14 @@ package: download ## check the .info downloads, then build dist/<PKG>.tar.gz for
 		for f in $(PKG).SlackBuild $(PKG).info slack-desc README; do \
 			[ -f "$(PKG)/$$f" ] || { echo "error: $(PKG)/$$f is required by the submission guidelines"; exit 1; }; \
 		done; \
-		mkdir -p dist && \
+		mkdir --parents dist && \
 		excludes=$$( . $(PKG)/$(PKG).info; \
 			for u in $$DOWNLOAD $$DOWNLOAD_x86_64; do \
 				[ "$$u" = UNSUPPORTED ] || echo "--exclude=$(PKG)/$${u##*/}"; \
 			done ) && \
-		tar $$excludes --owner=root --group=root -czf dist/$(PKG).tar.gz $(PKG) && \
+		tar $$excludes --owner=root --group=root --create --gzip --file=dist/$(PKG).tar.gz $(PKG) && \
 		echo "created dist/$(PKG).tar.gz:" && \
-		tar -tzf dist/$(PKG).tar.gz | sed "s/^/  /"'
+		tar --list --gzip --file=dist/$(PKG).tar.gz | sed "s/^/  /"'
 
 .PHONY: package_all
 package_all: ## build dist/<name>.tar.gz for every package in the repo
@@ -114,7 +114,7 @@ RUN ?= $(PKG) --version
 .PHONY: try
 try: download ## build, install and run <PKG> in a fresh slackware container. PKG=<name> [RUN="<command>"]
 	@$(DOCKER_RUN) $(SLACKWARE_IMAGE) bash -c ' \
-		set -e; \
+		set -o errexit; \
 		OUTPUT=/tmp bash $(PKG)/$(PKG).SlackBuild; \
 		installpkg /tmp/$$(PRINT_PACKAGE_NAME=1 bash $(PKG)/$(PKG).SlackBuild); \
 		echo "+ $(RUN)"; \
