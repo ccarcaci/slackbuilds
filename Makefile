@@ -133,7 +133,7 @@ lint_all: ## run lint for every package in the repo
 # .info, so only those (and leftover .part files) go: tracked files stay. Each
 # .info is sourced in a subshell so one package's fields can't leak into the next.
 clean: ## remove dist/ and the files `download` fetched into each package directory
-	@rm -rf $(DIST_DIR)
+	@rm -rfv $(DIST_DIR)
 	@for p in $(PACKAGES); do \
 		( . $(MAKEFILE_DIR)$$p/$$p.info; \
 		for u in $$DOWNLOAD $$DOWNLOAD_x86_64; do \
