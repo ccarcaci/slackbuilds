@@ -15,7 +15,7 @@ Each package directory holds the standard SBo file set:
 
 https://slackbuilds.org/repository/15.0/development/age/
 
-https://slackbuilds.org/repository/15.0/development/sops
+https://slackbuilds.org/repository/15.0/development/sops/
 
 ## Usage
 
