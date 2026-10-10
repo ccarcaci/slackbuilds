@@ -4,14 +4,18 @@ Personal SlackBuilds, targeting the Slackware 15.0 branch.
 
 ## Packages
 
-- **age/** *(work in progress)* — installs the official static `age`
+- **age/**: installs the official static `age`
   release tarball: `age`, `age-keygen`, `age-inspect` and the
   `age-plugin-*` helpers. No compiler/Go toolchain needed, x86_64 only.
-- **sops/** *(work in progress)* — installs the official static `sops`
+- **sops/**: installs the official static `sops`
   binary. No compiler/Go toolchain needed, x86_64 only.
 
 Each package directory holds the standard SBo file set:
 `$PRGNAM.SlackBuild`, `$PRGNAM.info`, `slack-desc`, `README`.
+
+https://slackbuilds.org/repository/15.0/development/age/
+
+https://slackbuilds.org/repository/15.0/development/sops
 
 ## Usage
 
